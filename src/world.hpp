@@ -1,18 +1,20 @@
-#ifndef __PATH_CREATOR_HPP__
-#define __PATH_CREATOR_HPP__
+#ifndef __WORLD_HPP__
+#define __WORLD_HPP__
 #include <vector>
 #include "spline.h"
+#include "Eigen-3.3/Eigen/Dense"
 
 using namespace std;
 using namespace tk;
+using namespace Eigen;
 
-struct XYPoints {
+struct Path {
   vector<double> x;
   vector<double> y;
   int n;
-}
+};
 
-class PathCreator
+class World
 {
   private:
     double _loop_distance;
@@ -21,15 +23,16 @@ class PathCreator
     spline _smooth_dx;
     spline _smooth_dy;
     vector<double> convert_to_cartesian(const double& s, const double& d) const;
-    vector<double> jerk_minimizer_trajectory(vector<double> start, vector<double> end, double time_limit);
+    Eigen::VectorXd jerk_minimizer_trajectory(const vector<double>& start, const vector<double>& end, const double time_limit);
 
   public:
-    PathCreator(double distance): _loop_distance(distance) {};
+    World(double distance): _loop_distance(distance) {};
     void interpolate(const vector<double>& waypoints_x, const vector<double>& waypoints_y,
       const vector<double>& waypoints_s, const vector<double>&waypoints_dx,
       const vector<double>& waypoints_dy);
-    XYPoints PathCreator::create_path(JMT jmt_s, JMT jmt_d, const double t, const int n) const;
-    
+    Path create_path(const vector<double>& start_s, const vector<double>& end_s,
+        const vector<double>& start_d, const vector<double>& end_d, const double t, int n);
+    vector<double> calculate_other_cars_velocity(vector<double> sensor_fusion);
 
 };
 
