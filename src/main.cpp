@@ -5,10 +5,12 @@
 #include <iostream>
 #include <thread>
 #include <vector>
+#include <unordered_map>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
-#include "path_smoother.hpp"
+#include "world.hpp"
+#include "vehicle.hpp"
 
 using namespace std;
 
@@ -207,14 +209,19 @@ int main() {
   map_waypoints_dx.push_back(map_waypoints_dx.front());
   map_waypoints_dy.push_back(map_waypoints_dy.front());
 
-  PathCreator path_creator(max_s);
-  path_creator.interpolate(map_waypoints_x, map_waypoints_y, map_waypoints_s,
+  World track(max_s);
+  track.interpolate(map_waypoints_x, map_waypoints_y, map_waypoints_s,
     map_waypoints_dx, map_waypoints_dy);
+  //
+  double target_speed = 50.0;
+  Vehicle my_car;
+  my_car.set_target_speed(target_speed);
+  unordered_map<int, Vehicle> other_cars;
+  int horizon = 10;
+  int samples = 10;
 
-  //Vehicle my_car;
-
-  h.onMessage([&path_creator](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-                     uWS::OpCode opCode) {
+  h.onMessage([&track, &my_car, &samples, &horizon, &other_cars](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+                   uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -251,11 +258,41 @@ int main() {
           	auto sensor_fusion = j[1]["sensor_fusion"];
           	json msgJson;
 
-          	vector<double> next_x_vals;
-          	vector<double> next_y_vals;
+            // Append previous path to next_vals in order to give continuity
+            // to the Trajectory
+          	vector<double> next_x_vals(previous_path_x.begin(), previous_path_x.end());;
+          	vector<double> next_y_vals(previous_path_y.begin(), previous_path_y.end());;
 
-            // Update my car position
-            //my_car.update_data(car_s, car_d, car_speed);
+            // Update my car position ( speed along d is always zero for this car)
+            my_car.update_position(car_s, car_d, car_speed, 0, 0.2);
+
+            for(int i = 0 ; i < sensor_fusion.size(); i++) {
+              cout << "Calculating speed for car with id: " << sensor_fusion[i][0] << " ";
+              vector<double> other_car_speeds;
+              other_car_speeds = track.calculate_other_cars_velocity(sensor_fusion[i]);
+              cout << " S_speed = " << other_car_speeds[0] << " d_speed = " << other_car_speeds[1] << endl;
+              if(other_cars.find(sensor_fusion[i][0]) != other_cars.end())
+                other_cars[sensor_fusion[i][0]].update_position(sensor_fusion[i][5], sensor_fusion[i][6], other_car_speeds[0], other_car_speeds[1], 0.2);
+              else {
+                Vehicle other_car;
+                other_car.update_position(sensor_fusion[i][5], sensor_fusion[i][6], other_car_speeds[0], other_car_speeds[1], 0.2);
+                other_cars[sensor_fusion[i][0]] = other_car;
+              }
+            }
+            //Update behaviour every 2 seconds as a sample is 0.2 seconds..
+            if(previous_path_x.size() < horizon / 2) {
+                //my_car.update_state(other_cars, horizon);
+                // or
+                // Behaviour_planner planner;
+                // planner.best_plan(my_car, other_cars, horizon);
+                Path path;
+                //path = track.create_path(my_car.start_s(), my_car.end_s(), my_car.start_d(), my_car.end_d(), 2.0, 10);
+                // or... planner has start and end of the trajectory and how many points.....
+                //path = track.create_path(planner, horizon/2);
+                //next_x_vals = path.x;
+                //next_y_vals = path.y;
+            }
+
 
             // Try to interpolate some waypoints
 
