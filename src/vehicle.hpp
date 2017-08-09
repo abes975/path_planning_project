@@ -10,7 +10,7 @@
 #include <unordered_map>
 #include <string>
 #include <iterator>
-#include "behaviour_planner.hpp"
+//#include "behaviour_planner.hpp"
 
 using namespace std;
 
@@ -28,7 +28,7 @@ private:
   double _a_d;
   double _target_speed;
   int _lane;
-  //BehaviourPlanner::State state;
+  //BehaviourPlanner::State _state;
   vector <int> _start_s;
   vector <int> _end_s;
   vector <int> _start_d;

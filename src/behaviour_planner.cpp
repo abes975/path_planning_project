@@ -1,41 +1,110 @@
 #include "behaviour_planner.hpp"
+#include "vehicle.hpp"
 
-vector<BehaviourPlanner::State> BehaviourPlanner::get_valid_next_states(BehaviourPlanner::State& current_state)
+// Create allowed transition in the FSM
+BehaviourPlanner::BehaviourPlanner()
 {
     vector<BehaviourPlanner::State> valid_states;
-    switch(current_state) {
-      case BehaviourPlanner::State::BEGIN:
-        valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
-        break;
-      case BehaviourPlanner::State::KEEP_LANE:
-        valid_states.push_back(BehaviourPlanner::State::KEEP_LANE;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT;
-        break;
-      case BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT:
-        valid_states.push_back(BehaviourPlanner::State::KEEP_LANE;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT;
-        valid_states.push_back(BehaviourPlanner::State::CHANGE_LANE_LEFT;
-        break;
-      case BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT:
-        valid_states.push_back(BehaviourPlanner::State::KEEP_LANE;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT;
-        valid_states.push_back(BehaviourPlanner::State::CHANGE_LANE_RIGHT;
-        break;
-      case BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT:
-        valid_states.push_back(BehaviourPlanner::State::KEEP_LANE;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT;
-        break;
-      case BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT:
-        valid_states.push_back(BehaviourPlanner::State::KEEP_LANE;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT;
-        valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT;
-        break;
-      default:
-        throw std::runtime_error(string("Unkown state passed...cannot continue");
+    // Begin
+    valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
+    _allowed_states[BehaviourPlanner::State::BEGIN]  = valid_states;
+
+    // Keep lane
+    valid_states.clear();
+    valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT);
+    _allowed_states[BehaviourPlanner::State::KEEP_LANE] = valid_states;
+
+    // Prepare change lane left
+    valid_states.clear();
+    valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT);
+    valid_states.push_back(BehaviourPlanner::State::CHANGE_LANE_LEFT);
+    _allowed_states[BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT] = valid_states;
+
+    // Prepare change lane right
+    valid_states.clear();
+    valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT);
+    valid_states.push_back(BehaviourPlanner::State::CHANGE_LANE_RIGHT);
+    _allowed_states[BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT] = valid_states;
+
+    // Change lane left
+    valid_states.clear();
+    valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT);
+    _allowed_states[BehaviourPlanner::State::CHANGE_LANE_LEFT] = valid_states;
+
+    // Change lane right
+    valid_states.clear();
+    valid_states.push_back(BehaviourPlanner::State::KEEP_LANE);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_RIGHT);
+    valid_states.push_back(BehaviourPlanner::State::PREPARE_CHANGE_LANE_LEFT);
+    _allowed_states[BehaviourPlanner::State::CHANGE_LANE_LEFT] = valid_states;
+
+    _cost = 0;
+    _curr_state = BehaviourPlanner::State::BEGIN;
+
+}
+
+
+const vector<BehaviourPlanner::State>& BehaviourPlanner::get_valid_next_states(BehaviourPlanner::State& current_state)
+{
+    if(_allowed_states.find(current_state) != _allowed_states.end())
+        return _allowed_states[current_state];
+    else
+        throw std::runtime_error(string("Unkown state passed...cannot continue"));
+}
+
+
+void BehaviourPlanner::plan_next_move(Vehicle& ego, unordered_map<int, Vehicle>& other_cars, int horizon)
+{
+    double cost = 0;
+    double min_cost = std::numeric_limits<double>::max();
+    vector<vector<double>> predictions = generate_future_positions(other_cars, horizon);
+    vector<BehaviourPlanner::State>& states = get_valid_next_states(_curr_state);
+    for(int i = 0; i < states.size(); i++) {
+        cost = 0;
+        // create copy of our vehicle
+        Vehicle experiment = ego;
+        BehaviourPlanner::State state = states[i];
+        //cout << "Evaluating state: " << states[i] <<  endl;
+
+        realize_state(experiment, state, predictions);
+        // Move the vehicle in the future....
+        vector<double> ego_future = experiment.state_at(horizon * 0.2);
+        // Finally get a cost...
+        /*
+        cost = calculate_total_cost(experiment, ego_future, predictions);
+        //cout << "\tTotal cost for state " << experiment.state << " = " << cost << " curren min cost " << min_cost << " for state " << this->state << endl;
+        if(cost < min_cost) {
+          min_cost = cost;
+          //cout << "\tNEW min cost is " << min_cost << " for state " << experiment.state << endl;
+           this->state = experiment.state;
+          this->start = future[1];
+          this->end = future.back();
+        }
+        */
     }
-    return valid_states;
+    cout << "NEXT STATE WILL BE " << this->state << endl << endl;
+}
+}
+
+
+vector<vector<double> > BehaviourPlanner::generate_future_positions(unordered_map<int, Vehicle>& other_cars, int horizon)
+{
+  vector<vector<double> > predictions;
+  // Prediction at position 0 is current state!!!
+  unordered_map<int, Vehicle>::iterator it;
+  for(it = other_cars.begin(); it != other_cars.end(); ++it) {
+    for(int i = 0; i <= horizon; i++) {
+      vector<double> future = it->second.state_at(0.2);
+      predictions.push_back(future);
+    }
+  }
+  return predictions;
 }
 
 #if 0

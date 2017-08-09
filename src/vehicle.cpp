@@ -7,7 +7,7 @@
 #include <iterator>
 #include <algorithm>
 #include "vehicle.hpp"
-#include "behaviour_planner.hpp"
+//#include "behaviour_planner.hpp"
 
 
 /**
@@ -39,8 +39,8 @@ Vehicle::Vehicle(double s, double d, double v_s, double v_d)
     _pv_d = _v_d;
     _v_s = v_s;
     _v_d = v_d;
-    _a_s = (_v_s - _pv_s); // SAMPLING_TIME;
-    _a_d = (_v_d - _pv_d); // SAMPLING_TIME;
+    _a_s = 0; // SAMPLING_TIME;
+    _a_d = 0; // SAMPLING_TIME;
 }
 
 void Vehicle::update_position(double s, double d, double v_s, double v_d, double t)
@@ -54,7 +54,7 @@ void Vehicle::update_position(double s, double d, double v_s, double v_d, double
   // Have to divide by time here delta v / t gives acceleration...
   _a_s = (_v_s - _pv_s) / t;
   _a_d = (_v_d - _pv_d) / t;
-  cout << "Acceleration _a_s = " << _a_s << " a_d = " << _a_d << endl;
+  //cout << "Acceleration _a_s = " << _a_s << " a_d = " << _a_d << endl;
 }
 
 
@@ -79,6 +79,48 @@ vector<double> Vehicle::state_at(double t)
     double v_d = _v_d + _a_d * t;
     return {s, d, v_s, v_d, _a_s, _a_d};
 }
+
+#if 0
+void Vehicle::update_state(unordered_map<int, Vehicle >& other_cars, int horizon)
+{
+     if(horizon < 1)
+       horizon = 1;
+
+     double cost;
+     double min_cost = std::numeric_limits<double>::max();
+     BehaviourPlanner behaviour_planner;
+     vector<vector<double>> predictions = generate_future_positions(other_cars, horizon);
+
+     vector<BehaviourPlanner::State> states = behaviour_planner.get_valid_next_states(state);
+     for(int i = 0; i < states.size(); i++) {
+         cost = 0;
+         // create copy of our vehicle
+         Vehicle experiment = *this;
+         experiment.state = states[i];
+         //cout << "Evaluating state: " << states[i] <<  endl;
+
+         //experiment.realize_state(predictions);
+         // Move the vehicle in the future....
+         vector<vector<double> > future = experiment.increment(horizon);
+         // Finally get a cost...
+         /*
+         cost = behaviour_planner.calculate_total_cost(experiment, future, predictions);
+         //cout << "\tTotal cost for state " << experiment.state << " = " << cost << " curren min cost " << min_cost << " for state " << this->state << endl;
+         if(cost < min_cost) {
+           min_cost = cost;
+           //cout << "\tNEW min cost is " << min_cost << " for state " << experiment.state << endl;
+            this->state = experiment.state;
+           this->start = future[1];
+           this->end = future.back();
+         }
+         */
+     }
+     cout << "NEXT STATE WILL BE " << this->state << endl << endl;
+}
+#endif
+
+
+
 //
 // void Vehicle::update_position(double cur_s, double cur_d, double speed_s, double speed_d, double t)
 // {
@@ -123,43 +165,7 @@ vector<double> Vehicle::state_at(double t)
 //   }
 // }
 
-// // TODO - Implement this method.
-// void Vehicle::update_state(unordered_map<int, Vehicle >& other_cars, int horizon)
-// {
-//     if(horizon < 1)
-//       horizon = 1;
-//
-//     double cost;
-//     double min_cost = std::numeric_limits<double>::max();
-//     BehaviourPlanner behaviour_planner;
-//     vector<vector<double>> predictions = generate_future_positions(other_cars, horizon);
-//
-//     vector<BehaviourPlanner::State> states = behaviour_planner.get_valid_next_states(state);
-//     for(int i = 0; i < states.size(); i++) {
-//         cost = 0;
-//         // create copy of our vehicle
-//         Vehicle experiment = *this;
-//         experiment.state = states[i];
-//         //cout << "Evaluating state: " << states[i] <<  endl;
-//
-//         //experiment.realize_state(predictions);
-//         // Move the vehicle in the future....
-//         vector<vector<double> > future = experiment.increment(horizon);
-//         // Finally get a cost...
-//         /*
-//         cost = behaviour_planner.calculate_total_cost(experiment, future, predictions);
-//         //cout << "\tTotal cost for state " << experiment.state << " = " << cost << " curren min cost " << min_cost << " for state " << this->state << endl;
-//         if(cost < min_cost) {
-//           min_cost = cost;
-//           //cout << "\tNEW min cost is " << min_cost << " for state " << experiment.state << endl;
-//           this->state = experiment.state;
-//           this->start = future[1];
-//           this->end = future.back();
-//         }
-//         */
-//     }
-//     cout << "NEXT STATE WILL BE " << this->state << endl << endl;
-// }
+
 //
 // vector<vector<double>> Vehicle::increment(int horizon)
 // {

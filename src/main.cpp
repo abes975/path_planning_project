@@ -10,6 +10,7 @@
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
 #include "world.hpp"
+#include "behaviour_planner.hpp"
 #include "vehicle.hpp"
 
 using namespace std;
@@ -284,7 +285,7 @@ int main() {
                 //my_car.update_state(other_cars, horizon);
                 // or
                 // Behaviour_planner planner;
-                // planner.best_plan(my_car, other_cars, horizon);
+                // planner.plan_next_move(my_car, other_cars, horizon);
                 Path path;
                 //path = track.create_path(my_car.start_s(), my_car.end_s(), my_car.start_d(), my_car.end_d(), 2.0, 10);
                 // or... planner has start and end of the trajectory and how many points.....
