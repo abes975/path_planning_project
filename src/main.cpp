@@ -5,15 +5,13 @@
 #include <iostream>
 #include <thread>
 #include <vector>
-#include <unordered_map>
 #include "Eigen-3.3/Eigen/Core"
 #include "Eigen-3.3/Eigen/QR"
 #include "json.hpp"
-#include "world.hpp"
-#include "behaviour_planner.hpp"
-#include "vehicle.hpp"
+#include "spline.h"
 
 using namespace std;
+using namespace tk;
 
 // for convenience
 using json = nlohmann::json;
@@ -42,7 +40,6 @@ double distance(double x1, double y1, double x2, double y2)
 {
 	return sqrt((x2-x1)*(x2-x1)+(y2-y1)*(y2-y1));
 }
-
 int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> maps_y)
 {
 
@@ -53,7 +50,7 @@ int ClosestWaypoint(double x, double y, vector<double> maps_x, vector<double> ma
 	{
 		double map_x = maps_x[i];
 		double map_y = maps_y[i];
-		double dist = distance(x, y, map_x, map_y);
+		double dist = distance(x,y,map_x,map_y);
 		if(dist < closestLen)
 		{
 			closestLen = dist;
@@ -90,7 +87,7 @@ int NextWaypoint(double x, double y, double theta, vector<double> maps_x, vector
 // Transform from Cartesian x,y coordinates to Frenet s,d coordinates
 vector<double> getFrenet(double x, double y, double theta, vector<double> maps_x, vector<double> maps_y)
 {
-	int next_wp = NextWaypoint(x,y, theta, maps_x, maps_y);
+	int next_wp = NextWaypoint(x,y, theta, maps_x,maps_y);
 
 	int prev_wp;
 	prev_wp = next_wp-1;
@@ -164,7 +161,6 @@ vector<double> getXY(double s, double d, vector<double> maps_s, vector<double> m
 
 }
 
-
 int main() {
   uWS::Hub h;
 
@@ -202,27 +198,12 @@ int main() {
   	map_waypoints_dy.push_back(d_y);
   }
 
-  // In order to have the path to wrap smoothly we insert as last element a copy
-  // of the first one, but for the s element we use the distance of the loop;
-  map_waypoints_x.push_back(map_waypoints_x.front());
-  map_waypoints_y.push_back(map_waypoints_y.front());
-  map_waypoints_s.push_back(max_s);
-  map_waypoints_dx.push_back(map_waypoints_dx.front());
-  map_waypoints_dy.push_back(map_waypoints_dy.front());
+  int curr_lane = 1;
+  double ref_speed = 0.0;
+  double max_speed = 49.0;
 
-  World track(max_s);
-  track.interpolate(map_waypoints_x, map_waypoints_y, map_waypoints_s,
-    map_waypoints_dx, map_waypoints_dy);
-  //
-  double target_speed = 50.0;
-  Vehicle my_car;
-  my_car.set_target_speed(target_speed);
-  unordered_map<int, Vehicle> other_cars;
-  int horizon = 10;
-  int samples = 10;
-
-  h.onMessage([&track, &my_car, &samples, &horizon, &other_cars](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
-                   uWS::OpCode opCode) {
+  h.onMessage([&ref_speed, &curr_lane, &max_speed, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
+                     uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -257,48 +238,158 @@ int main() {
 
           	// Sensor Fusion Data, a list of all other cars on the same side of the road.
           	auto sensor_fusion = j[1]["sensor_fusion"];
+
           	json msgJson;
 
-            // Append previous path to next_vals in order to give continuity
-            // to the Trajectory
-          	vector<double> next_x_vals(previous_path_x.begin(), previous_path_x.end());;
-          	vector<double> next_y_vals(previous_path_y.begin(), previous_path_y.end());;
+          	vector<double> next_x_vals;
+          	vector<double> next_y_vals;
 
-            // Update my car position ( speed along d is always zero for this car)
-            my_car.update_position(car_s, car_d, car_speed, 0, 0.2);
+            bool almost_crash = false;
+            int path_len = previous_path_y.size();
 
-            for(int i = 0 ; i < sensor_fusion.size(); i++) {
-              cout << "Calculating speed for car with id: " << sensor_fusion[i][0] << " ";
-              vector<double> other_car_speeds;
-              other_car_speeds = track.calculate_other_cars_velocity(sensor_fusion[i]);
-              cout << " S_speed = " << other_car_speeds[0] << " d_speed = " << other_car_speeds[1] << endl;
-              if(other_cars.find(sensor_fusion[i][0]) != other_cars.end())
-                other_cars[sensor_fusion[i][0]].update_position(sensor_fusion[i][5], sensor_fusion[i][6], other_car_speeds[0], other_car_speeds[1], 0.2);
-              else {
-                Vehicle other_car;
-                other_car.update_position(sensor_fusion[i][5], sensor_fusion[i][6], other_car_speeds[0], other_car_speeds[1], 0.2);
-                other_cars[sensor_fusion[i][0]] = other_car;
+            if (path_len)
+              car_s = end_path_s;
+
+            for(int i = 0; i < sensor_fusion.size(); i++) {
+              // Want to know which lane are other cars...
+              float d = sensor_fusion[i][6];
+              double right_limit = 2 + 4 * curr_lane + 2;
+              double left_limit = 2 + 4 * curr_lane - 2;
+              // is this car in my lane...we don't want to bump into it
+              if (d < right_limit && d > left_limit) {
+                double vx = sensor_fusion[i][3];
+                double vy = sensor_fusion[i][4];
+                // Get some data
+                double other_speed = sqrt(pow(vx, 2) + pow(vy, 2));
+                double other_car_s = sensor_fusion[i][5];
+                // let's see where this car will be at the end of the path...
+                // s = s + v * t;
+                other_car_s += (double) path_len * 0.02 * other_speed;
+                // We don't want to get too close to other cars....
+                if ((other_car_s > car_s) && ((other_car_s - car_s) < 25)) {
+                  almost_crash = true;
+                }
               }
             }
-            //Update behaviour every 2 seconds as a sample is 0.2 seconds..
-            if(previous_path_x.size() < horizon / 2) {
-                //my_car.update_state(other_cars, horizon);
-                // or
-                // Behaviour_planner planner;
-                // planner.plan_next_move(my_car, other_cars, horizon);
-                Path path;
-                //path = track.create_path(my_car.start_s(), my_car.end_s(), my_car.start_d(), my_car.end_d(), 2.0, 10);
-                // or... planner has start and end of the trajectory and how many points.....
-                //path = track.create_path(planner, horizon/2);
-                //next_x_vals = path.x;
-                //next_y_vals = path.y;
+
+            if (almost_crash)
+              ref_speed -= .35;
+            else if (ref_speed < max_speed)
+              ref_speed += .65;
+
+
+          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
+            // Those will be euqlly sparsed x,y points to be interpolated
+            vector<double> ptsx;
+            vector<double> ptsy;
+
+            double ref_x = car_x;
+            double ref_y = car_y;
+            double ref_yaw = deg2rad(car_yaw);
+            // Create a path of 2 points using new points or old
+            // path points...
+            if (path_len < 2) {
+              double prev_car_x = car_x - cos(car_yaw);
+              double prev_car_y = car_y - sin(car_yaw);
+
+              ptsx.push_back(prev_car_x);
+              ptsx.push_back(car_x);
+
+              ptsy.push_back(prev_car_y);
+              ptsy.push_back(car_y);
+            } else {
+              ref_x = previous_path_x.at(path_len - 1);
+              ref_y = previous_path_y.at(path_len - 1);
+
+              double prev_ref_x = previous_path_x.at(path_len - 2);
+              double prev_ref_y = previous_path_y.at(path_len - 2);
+              ref_yaw = atan2(ref_y - prev_ref_y, ref_x - prev_ref_x);
+
+              ptsx.push_back(prev_ref_x);
+              ptsx.push_back(ref_x);
+
+              ptsy.push_back(prev_ref_y);
+              ptsy.push_back(ref_y);
+            }
+
+            // Create a series of point with constant distance...and then add
+            // to the points already calculated...needed to do smooth interpolation
+            double displacement = 30.0;
+            double new_d = 2 + 4 * curr_lane;
+            vector<double> way_point_1 = getXY(car_s + 1 * displacement, new_d,
+              map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            vector<double> way_point_2 = getXY(car_s + 2 * displacement, new_d,
+              map_waypoints_s, map_waypoints_x, map_waypoints_y);
+            //vector<double> way_point_3 = getXY(car_s + 3 * displacement, new_d,
+            //  map_waypoints_s, map_waypoints_x, map_waypoints_y);
+
+            ptsx.push_back(way_point_1[0]);
+            ptsx.push_back(way_point_2[0]);
+            //ptsx.push_back(way_point_3[0]);
+
+            ptsy.push_back(way_point_1[1]);
+            ptsy.push_back(way_point_2[1]);
+            //ptsy.push_back(way_point_3[1]);
+            // Absolute coordination conversion here..so angle gets 0 :D
+            assert(ptsx.size() == ptsy.size());
+
+            for (int i = 0; i < ptsx.size(); i++) {
+              double translated_x = ptsx[i] - ref_x;
+              double translated_y = ptsy[i] - ref_y;
+              ptsx[i] = translated_x * cos(0 - ref_yaw) - translated_y * sin(0 - ref_yaw);
+              ptsy[i] = translated_y * cos(0 - ref_yaw) + translated_x * sin(0 - ref_yaw);
+            }
+
+            // interpolate points
+            spline s;
+            s.set_points(ptsx, ptsy);
+            // Recycle all previous path points as we did not processed them already
+            //next_x_vals.insert(next_x_vals.begin(), previous_path_x.begin(), previous_path_x.end());
+            //next_y_vals.insert(next_y_vals.begin(), previous_path_y.begin(), previous_path_y.end());
+            for(int i = 0 ; i < previous_path_x.size() ; i++) {
+              next_x_vals.push_back(previous_path_x[i]);
+              next_y_vals.push_back(previous_path_y[i]);
+            }
+            // That's used as suggested in the walkthrough video in order
+            // do distribute spline points in order to obey our intended
+            // speed of the car!!! (quite difficult to figure out just by myself)
+            double target_x = 30.0;
+            double target_y = s(target_x);
+            double target_distance = sqrt(pow(target_x, 2) + pow(target_y, 2));
+
+            double x_add_on = 0;
+            // path will be of 50 points...so we have already added some.before
+            // so just add (50 - already added)
+
+            for (int i = 1; i <= 50 - previous_path_x.size(); i++) {
+              // 2.24 is needed to convert in meter per second...those are the
+              // intervals on the X axis (cateto triangolo) and target_distance
+              // is the hypotenuse. Once we have N we pass to spline in order to
+              // get Y....
+              double N = (target_distance / (0.02 * ref_speed/2.24));
+              double x_point = x_add_on + target_x / N;
+              double y_point = s(x_point);
+
+              x_add_on = x_point;
+
+              double x_ref = x_point;
+              double y_ref = y_point;
+
+              // Convert back to map coordinates...
+              // Rotate first
+              x_point = x_ref * cos(ref_yaw) - y_ref * sin(ref_yaw);
+              y_point = y_ref * cos(ref_yaw) + x_ref * sin(ref_yaw);
+              // and then translate
+              x_point += ref_x;
+              y_point += ref_y;
+
+              // add to my new path
+              next_x_vals.push_back(x_point);
+              next_y_vals.push_back(y_point);
             }
 
 
-            // Try to interpolate some waypoints
-
-          	// TODO: define a path made up of (x,y) points that the car will visit sequentially every .02 seconds
-          	msgJson["next_x"] = next_x_vals;
+  	        msgJson["next_x"] = next_x_vals;
           	msgJson["next_y"] = next_y_vals;
 
           	auto msg = "42[\"control\","+ msgJson.dump()+"]";
