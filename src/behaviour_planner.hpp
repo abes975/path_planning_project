@@ -29,7 +29,8 @@ class BehaviourPlanner
     bool is_same_lane(double other_d_coord, int lane);
     bool can_change_lane(double ego_pos, int closest_car_idx,
         const vector<vector<double> >& sensor_fusion, int new_lane, int path_len);
-    const double get_minimum_buffer() const;
+    const double get_minimum_buffer_front() const;
+    const double get_minimum_buffer_rear() const;
     int convert_d_to_lane(const double d);
 
   public:

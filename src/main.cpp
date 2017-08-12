@@ -205,7 +205,7 @@ int main() {
   double ref_speed = 0.0;
   double speed_limit = 49.0;
   double time_frame = 0.02;
-  BehaviourPlanner planner(Style::DriveStyle::SPORTY, cur_lane, num_lanes,
+  BehaviourPlanner planner(Style::DriveStyle::MAX_CONFORT, cur_lane, num_lanes,
     lane_widht, speed_limit, time_frame);
 
   h.onMessage([&planner, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
@@ -309,6 +309,7 @@ int main() {
             ptsy.push_back(way_point_1[1]);
             ptsy.push_back(way_point_2[1]);
             ptsy.push_back(way_point_3[1]);
+
             // Absolute coordination conversion here..so angle gets 0 :D
             assert(ptsx.size() == ptsy.size());
 
@@ -322,13 +323,11 @@ int main() {
             // interpolate points
             spline s;
             s.set_points(ptsx, ptsy);
+
             // Recycle all previous path points as we did not processed them already
-            //next_x_vals.insert(next_x_vals.begin(), previous_path_x.begin(), previous_path_x.end());
-            //next_y_vals.insert(next_y_vals.begin(), previous_path_y.begin(), previous_path_y.end());
-            for(int i = 0 ; i < previous_path_x.size() ; i++) {
-              next_x_vals.push_back(previous_path_x[i]);
-              next_y_vals.push_back(previous_path_y[i]);
-            }
+            next_x_vals.insert(next_x_vals.begin(), previous_path_x.begin(), previous_path_x.end());
+            next_y_vals.insert(next_y_vals.begin(), previous_path_y.begin(), previous_path_y.end());
+
             // That's used as suggested in the walkthrough video in order
             // do distribute spline points in order to obey our intended
             // speed of the car!!! (quite difficult to figure out just by myself)
@@ -344,7 +343,7 @@ int main() {
               // intervals on the X axis (cateto triangolo) and target_distance
               // is the hypotenuse. Once we have N we pass to spline in order to
               // get Y....
-              double N = (target_distance / (planner.time_frame() * planner.speed()/2.24));
+              double N = (target_distance / (planner.time_frame() * planner.speed() / 2.24));
               double x_point = x_add_on + target_x / N;
               double y_point = s(x_point);
 
