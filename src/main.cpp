@@ -205,7 +205,7 @@ int main() {
   double ref_speed = 0.0;
   double speed_limit = 49.0;
   double time_frame = 0.02;
-  BehaviourPlanner planner(Style::DriveStyle::MAX_CONFORT, cur_lane, num_lanes,
+  BehaviourPlanner planner(Style::DriveStyle::SPORTY, cur_lane, num_lanes,
     lane_widht, speed_limit, time_frame);
 
   h.onMessage([&planner, &map_waypoints_x,&map_waypoints_y,&map_waypoints_s,&map_waypoints_dx,&map_waypoints_dy](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length,
