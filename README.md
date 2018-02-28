@@ -1,6 +1,17 @@
 # CarND-Path-Planning-Project
 Self-Driving Car Engineer Nanodegree Program
 
+### Here's the result
+
+This video shows in the simulator how the car chooses to change lane and overtake other vehicle,
+as well as brake to avoid collisions and wait before taking the decision.
+Different trajectory are evaluated and then the minimum cost trajectory is taken.
+(Speed, distance from back and ahead vehicle, avoid to change lane to drive in the most smoothly way are amongst the metric to evaluate a trajectory cost)
+Although those metric are naive the result seems to be quite effective.
+
+[![IMAGE ALT TEXT](http://img.youtube.com/vi/Et5Mgc2JX3w/0.jpg)](https://youtu.be/Et5Mgc2JX3w)
+
+
 ### Simulator.
 You can download the Term3 Simulator which contains the Path Planning Project from the [releases tab (https://github.com/udacity/self-driving-car-sim/releases).
 
